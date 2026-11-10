@@ -1,0 +1,69 @@
+{
+  "schema_version": 3,
+  "id": "qb-to-tr-transfer",
+  "name": "QB转TR转移做种",
+  "version": "0.9.0",
+  "author": "哆啦A豆",
+  "description": "把多个 qBittorrent 已完成的种子迁移到 Transmission 继续做种（绝不删数据），并支持参考 IYUU 的自动辅种：扫描 TR 做种、经宿主 PT 搜索匹配同款（主标题+发布组+体积三重匹配，确保文件名一致）、校验通过直接做种、不下载数据。",
+  "requires": { "api": "3.9" },
+  "ui": { "entry": "ui/page.js" },
+  "icon": "ui/icon.svg",
+  "menu": { "title": "QB转TR转移做种", "order": 92 },
+  "settings": [
+    {
+      "key": "qb_sources",
+      "label": "qBittorrent 实例",
+      "type": "textarea",
+      "default": "# 名称|地址|用户名|密码|路径前缀|APIKey|只处理该分类\n电影|http://192.168.1.157:8888|admin|密码|/downloads|\n电视剧|http://192.168.1.157:8889|suzuoyou|密码|/downloads|\n音乐|http://192.168.1.157:8898|admin|密码|/downloads|\n短剧|http://192.168.1.157:8988||密码|/downloads||",
+      "help": "一行一个实例。密码认证填用户名+密码；API Key 认证只填第 6 段。路径前缀留空=两边路径一致（1:1 挂载，最常见）。第 7 段可填只处理的分类"
+    },
+    { "key": "tr_url", "label": "Transmission 地址", "type": "url", "default": "http://192.168.1.157:9091", "help": "RPC 在 /transmission/rpc" },
+    { "key": "tr_username", "label": "TR 用户名", "type": "text", "default": "", "help": "TR 开了 RPC 认证时必填" },
+    { "key": "tr_password", "label": "TR 密码", "type": "password", "default": "" },
+    { "key": "path_map", "label": "路径映射规则", "type": "textarea", "default": "# qB 路径前缀 => TR 路径前缀（最长前缀优先，可多行）\n# 依据宿主挂载推断：音乐库在 qB 里是 /music，在 DIAN115/TR 侧是 /mc/music\n/music => /mc/music\n", "help": "同一个 qB 里有多个保存根目录时用这个；两边路径一致就留空。规则按最长前缀优先匹配，先用试运行核对「目标目录」列" },
+    { "key": "path_to", "label": "TR 路径前缀", "type": "text", "default": "", "help": "TR 与 qB 挂载一致时留空；不一致时填 TR 容器里的路径，并在实例行的第 5 段填 qB 里的路径" },
+    { "key": "path_from", "label": "qB 路径前缀（全局兜底）", "type": "text", "default": "", "help": "所有实例共用同一个挂载点时填这里" },
+    { "key": "qb_category", "label": "全局分类过滤", "type": "text", "default": "", "help": "留空=全部；实例行第 7 段可单独覆盖" },
+    { "key": "qb_tag", "label": "标签过滤", "type": "text", "default": "" },
+    { "key": "max_per_run", "label": "单轮最多转移", "type": "number", "default": 20, "help": "防止一次全量把两边打满" },
+    { "key": "retry_hours", "label": "失败重试冷却（小时）", "type": "number", "default": 6, "help": "0=失败后不再自动重试" },
+    { "key": "auto_enabled", "label": "定时自动转移", "type": "boolean", "default": false, "help": "每 15 分钟自动把新完成的种子转到 TR；仅在关闭“试运行”后生效" },
+    { "key": "notify_enabled", "label": "自动转移后通知", "type": "boolean", "default": true },
+    { "key": "start_paused", "label": "校验通过后仍暂停", "type": "boolean", "default": false, "help": "开启后 TR 里保持暂停，等你手动开始做种" },
+    { "key": "verify_after_add", "label": "加入后强制校验", "type": "boolean", "default": true, "help": "关闭会跳过校验，风险自负；不建议关" },
+    { "key": "keep_torrent_backup", "label": "保留种子文件备份", "type": "boolean", "default": true, "help": "把 .torrent 以 base64 存在插件存储（最多 50 个）" },
+    { "key": "remove_from_qb", "label": "迁移成功后从 qB 移除任务（清 0）", "type": "boolean", "default": true, "help": "只在 TR 确认校验 100% 并做种后才删；只删任务不删数据文件" },
+    { "key": "dry_run", "label": "试运行（只列计划）", "type": "boolean", "default": true, "help": "先开一次确认清单与目录，再关掉正式执行" },
+    { "key": "cross_seed_dir", "label": "辅种种子目录", "type": "text", "default": "", "help": "放 .torrent 文件的宿主机目录（DIAN115 能读到的路径）；扫描后逐个加入 TR 做种，处理完移入 done/ 子目录" },
+    { "key": "cross_seed_data_dir", "label": "辅种数据目录", "type": "text", "default": "", "help": "TR 容器里数据所在的目录；留空用 TR 默认下载目录。数据已在则该目录校验后做种，不在则从 0 下载" },
+    { "key": "autoseed_size_tolerance", "label": "辅种体积容差", "type": "number", "default": 0.001, "help": "同款种子体积差容忍比例（0.001=0.1%）；跨站同资源体积应完全一致，设大容易误匹配不同版本" },
+    { "key": "proxy", "label": "代理", "type": "text", "default": "", "help": "留空=直连（局域网推荐）" }
+  ],
+  "jobs": [
+    { "id": "scan", "entry": "jobs/scan.js", "handler": "run", "title": "扫描可转移种子", "timeout_seconds": 300, "queue": false },
+    { "id": "transfer", "entry": "jobs/transfer.js", "handler": "run", "recover": "recover", "title": "转移到 Transmission", "timeout_seconds": 3600, "allow_overlap": false },
+    { "id": "crossseed", "entry": "jobs/crossseed.js", "handler": "run", "recover": "recover", "title": "TR 辅种", "timeout_seconds": 3600, "allow_overlap": false },
+    { "id": "autoseed", "entry": "jobs/autoseed.js", "handler": "run", "recover": "recover", "title": "自动辅种", "timeout_seconds": 3600, "allow_overlap": false },
+    { "id": "auto", "entry": "jobs/auto.js", "handler": "run", "recover": "recover", "title": "定时自动转移", "timeout_seconds": 3600, "interval_seconds": 900, "allow_overlap": false }
+  ],
+  "declared_usage": {
+    "purpose": "把多个 qBittorrent 已完成的种子迁移到 Transmission 继续做种，并做自动辅种：TR 做种种子经宿主 PT 搜索匹配同款后推送回 TR 校验做种，不下载数据。",
+    "apis": [
+      "GET /api/pt/sites",
+      "GET /api/pt/downloaders",
+      "POST /api/pt/search",
+      "POST /api/pt/download"
+    ],
+    "sites": [
+      "用户在设置里填写的各 qBittorrent WebUI 地址",
+      "用户在设置里填写的 Transmission RPC 地址",
+      "宿主已配置的 PT 站点（自动辅种经宿主 /api/pt 接口访问，插件不直接接触站点 Cookie）"
+    ],
+    "files": [
+      "用户配置的辅种种子目录（读取 .torrent 后加入 TR 做种）",
+      "TR 数据目录（校验通过后做种，不移动、不下载数据文件）"
+    ],
+    "notifications": true,
+    "risk": "直接调用 qBittorrent WebUI API 与 Transmission RPC：读取种子清单、导出 .torrent、向 TR 添加任务并设置下载目录、按设置从 qB 删除任务（不删数据）。自动辅种经宿主 PT 搜索与下载接口访问，插件不接触站点凭据。凭据只保存在插件设置，不写日志、不外发。"
+  }
+}
