@@ -7,7 +7,7 @@
 // 不判断"部分下载/跳过文件"，不设 files-unwanted，不强制校验，不回滚。
 import { parseSources, parsePathMap, mapPath } from './lib/sources.js'
 import { login, torrentList, exportTorrent, removeTorrent } from './lib/qb.js'
-import { whichExist, add, call } from './lib/tr.js'
+import { whichExist, add, call, verify } from './lib/tr.js'
 
 const LEDGER_KEY = 'ledger'
 const BACKUP_PREFIX = 'torrent:'
