@@ -12,11 +12,14 @@
       "version": "1.0.11",
       "description": "把多个 qBittorrent 已完成的种子迁移到 Transmission 继续做种：加完立即校验，校验完成自动开始做种，加入后可选从 qB 移除任务（只删任务不删数据）。",
       "author": "哆啦A豆",
-      "source_url": "https://github.com/15373426383s-wq/dian115-qb-to-tr-transfer/releases/download/v1.0.10/qb-to-tr-transfer-1.0.10.dian115p",
+      "source_url": "https://github.com/15373426383s-wq/dian115-qb-to-tr-transfer/releases/download/v1.0.11/qb-to-tr-transfer-1.0.11.dian115p",
       "sha256": "caaee8de5a99af15c24b440bc6e935e047799e315085ac16a9875c3c1fcfe176",
       "delivery": "protected-v4",
       "homepage": "https://github.com/15373426383s-wq/dian115-qb-to-tr-transfer",
-      "changelog": "1.0.10：清理描述中的历史残留（不再提及自动辅种）。",
+      "repository_url": "https://github.com/15373426383s-wq/dian115-qb-to-tr-transfer",
+      "changelog": "1.0.11：彻底清除全部历史残留描述，统一改为独立说明。",
+      "icon": "https://raw.githubusercontent.com/15373426383s-wq/dian115-qb-to-tr-transfer/main/ui/icon.svg",
+      "keywords": ["qBittorrent", "Transmission", "转移做种", "种子迁移", "做种"],
       "permissions": []
     }
   ]
