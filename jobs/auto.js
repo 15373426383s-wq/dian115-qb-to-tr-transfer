@@ -1,4 +1,4 @@
-// 定时任务（每 15 分钟）：转移新完成的种子 → 把 TR 里校验完成的启动做种。
+// 定时任务（每 5 分钟）：转移新完成的种子（末尾自带 recheck 立即做种）→ 把 TR 里校验完成的启动做种。
 import { run as transferRun } from './transfer.js'
 
 export async function run(ctx) {
