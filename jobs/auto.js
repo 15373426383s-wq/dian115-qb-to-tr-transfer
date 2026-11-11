@@ -8,7 +8,7 @@ export async function run(ctx) {
   // 1) 转移 qB 已完成种子到 TR（加进去即删源，TR 自己校验）
   const t = await transferRun(ctx, { all: false })
 
-  // 2) TR 里「校验完成且暂停」的启动做种（MoviePilot 的 check_recheck）
+  // 2) TR 里「校验完成且暂停」的启动做种
   const r = await transferRun(ctx, { recheck: true })
 
   const line = `转移 加入 ${t.added || 0} / 跳过 ${t.skipped || 0} / 失败 ${t.failed || 0} / 清源 ${t.removed_from_qb || 0}；做种启动 ${r.started || 0}`
