@@ -98,8 +98,12 @@ export async function run(ctx, input = {}) {
   const cap = Math.max(1, Number(settings.max_per_run) || 20)
 
   await ctx.task.update({ stage: 'scan', message: '读取各 qB 已完成种子' })
+  // 与 MoviePilot torrenttransfer 一致：只转「完整下载」的种子。
+  // qB 里 progress=1 但文件列表存在 priority=0（选下部分集 / 跳过文件）的种子，
+  // 在 TR 里必然校验不到 100%（跨文件 piece 缺数据），MP 也不会转这类种子。直接跳过、保留在 qB。
   const candidates = []
   const seen = new Set()
+  let partialSkipped = 0
   for (const source of sources) {
     try {
       await login(ctx, source, settings)
@@ -108,6 +112,13 @@ export async function run(ctx, input = {}) {
         if (t.progress < 1) continue
         if (wanted && !wanted.has(t.hash)) continue
         if (seen.has(t.hash)) continue
+        // 部分下载检测：有被跳过的文件就不转
+        let partial = false
+        try {
+          const files = await torrentFiles(ctx, source, settings, t.hash)
+          if (files.some(f => Number(f.priority) === 0)) partial = true
+        } catch { /* 读不到就按完整处理，交给 TR 校验 */ }
+        if (partial) { partialSkipped++; continue }
         seen.add(t.hash)
         candidates.push({ source, t })
       }
@@ -115,6 +126,7 @@ export async function run(ctx, input = {}) {
       await ctx.task.log(`${source.name} 读取失败：${(error && error.message) || error}`)
     }
   }
+  if (partialSkipped) await ctx.task.log(`跳过 ${partialSkipped} 个「部分下载」种子（与 MoviePilot 一致，保留在 qB）`)
 
   // 已在 TR 的跳过（由 cleanup 负责清源），避免重复添加
   let targets = candidates
