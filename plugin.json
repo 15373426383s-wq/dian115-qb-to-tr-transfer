@@ -2,7 +2,7 @@
   "schema_version": 3,
   "id": "qb-to-tr-transfer",
   "name": "QB转TR转移做种",
-  "version": "1.0.5",
+  "version": "1.0.9",
   "author": "哆啦A豆",
   "description": "把多个 qBittorrent 已完成的种子迁移到 Transmission 继续做种（严格对齐 MoviePilot torrenttransfer）：get_completed_torrents 判定、add_torrent(paused, download_dir)、删源不删文件、check_recheck 启动做种。",
   "requires": { "api": "3.9" },
@@ -36,7 +36,7 @@
   "jobs": [
     { "id": "scan", "entry": "jobs/scan.js", "handler": "run", "title": "扫描可转移种子", "timeout_seconds": 300, "queue": false },
     { "id": "transfer", "entry": "jobs/transfer.js", "handler": "run", "recover": "recover", "title": "转移到 Transmission", "timeout_seconds": 3600, "allow_overlap": false },
-    { "id": "auto", "entry": "jobs/auto.js", "handler": "run", "recover": "recover", "title": "定时转移 + 开始做种", "timeout_seconds": 3600, "interval_seconds": 900, "allow_overlap": false }
+    { "id": "auto", "entry": "jobs/auto.js", "handler": "run", "recover": "recover", "title": "定时转移 + 开始做种", "timeout_seconds": 3600, "interval_seconds": 300, "allow_overlap": false }
   ],
   "declared_usage": {
     "purpose": "把多个 qBittorrent 已完成的种子迁移到 Transmission 继续做种：加入即清源（不删数据），定时把 TR 里校验完成的启动做种。",
