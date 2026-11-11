@@ -150,15 +150,17 @@ export async function run(ctx, input = {}) {
       const metainfo = await exportTorrent(ctx, source, settings, t.hash)
       if (backup) await backupTorrent(ctx, t.hash, metainfo)
 
-      // 与 MoviePilot torrenttransfer.__download 一致：仅 add(暂停, download_dir)，
-      // 不设置 files-unwanted、不强制校验、不回滚。TR 自己校验，check_recheck 负责 start。
+      // 与 MoviePilot torrenttransfer 对齐：add(暂停, download_dir) 后，
+      // 主动 torrent-verify（对应 MP「添加校验检查任务」），再由 check_recheck 启动做种。
       await ctx.task.checkpoint({ stage: 'adding', hash: t.hash, name: t.name, source: source.name, target_dir: targetDir })
       const added = await add(ctx, settings, { metainfo, downloadDir: targetDir, paused: true, labels: [TRANSFER_LABEL] })
       if (added.duplicate) {
         item.action = 'skip'; item.note = 'TR 报告种子已存在'
         summary.skipped++; summary.items.push(item); continue
       }
-      item.note = '已加入 TR（暂停，待校验）'
+      const hash = added.hash || t.hash
+      try { await verify(ctx, settings, hash) } catch (e) { await ctx.task.log(`校验触发失败（将靠 recheck 兜底）：${e.message || e}`) }
+      item.note = '已加入 TR 并触发校验'
 
       // MoviePilot 模型：加进去(暂停)即算成功，TR 自己会校验；recheck 任务负责后续 start
       item.action = 'added'
