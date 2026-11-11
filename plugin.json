@@ -2,7 +2,7 @@
   "schema_version": 3,
   "id": "qb-to-tr-transfer",
   "name": "QB转TR转移做种",
-  "version": "1.0.4",
+  "version": "1.0.5",
   "author": "哆啦A豆",
   "description": "把多个 qBittorrent 已完成的种子迁移到 Transmission 继续做种（严格对齐 MoviePilot torrenttransfer）：get_completed_torrents 判定、add_torrent(paused, download_dir)、删源不删文件、check_recheck 启动做种。",
   "requires": { "api": "3.9" },
