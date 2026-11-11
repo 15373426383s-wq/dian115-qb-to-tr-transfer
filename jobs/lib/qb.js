@@ -81,6 +81,19 @@ export async function torrentList(ctx, source, settings, { filter = 'completed' 
   })).filter(t => t.hash)
 }
 
+// 文件列表：索引顺序与 .torrent 内一致，用于把「不下载」的文件同步给 TR
+export async function torrentFiles(ctx, source, settings, hash) {
+  const r = await call(ctx, source, settings, '/api/v2/torrents/files?hash=' + encodeURIComponent(hash))
+  const list = parse(r.body || '[]')
+  return (Array.isArray(list) ? list : []).map((f, i) => ({
+    index: i,
+    name: String(f.name || ''),
+    size: Number(f.size) || 0,
+    priority: Number(f.priority),
+    progress: Number(f.progress) || 0,
+  }))
+}
+
 export async function exportTorrent(ctx, source, settings, hash) {
   const r = await call(ctx, source, settings, '/api/v2/torrents/export?hash=' + encodeURIComponent(hash), {
     response_type: 'base64',
