@@ -1,32 +1,31 @@
+// 定时任务（每 15 分钟）：转移新完成的种子 → 把 TR 里校验完成的启动做种。
 import { run as transferRun } from './transfer.js'
 
-// 定时自动转移：只在「正式执行」且「开启自动」时动手，避免误跑。
 export async function run(ctx) {
   const settings = await ctx.settings.get()
   if (settings.auto_enabled !== true) return { skipped: '自动转移未开启' }
-  if (settings.dry_run !== false) return { skipped: '当前为试运行模式，自动任务不做实际转移' }
 
-  const summary = await transferRun(ctx, { all: false })
-  const line = `加入 ${summary.added}，跳过 ${summary.skipped}，失败 ${summary.failed}` +
-    (summary.rolled_back ? `，回滚 ${summary.rolled_back}` : '') +
-    (summary.removed_from_qb ? `，清理源任务 ${summary.removed_from_qb}` : '')
+  // 1) 转移 qB 已完成种子到 TR（加进去即删源，TR 自己校验）
+  const t = await transferRun(ctx, { all: false })
 
-  if (settings.notify_enabled !== false && (summary.added || summary.failed)) {
+  // 2) TR 里「校验完成且暂停」的启动做种（MoviePilot 的 check_recheck）
+  const r = await transferRun(ctx, { recheck: true })
+
+  const line = `转移 加入 ${t.added || 0} / 跳过 ${t.skipped || 0} / 失败 ${t.failed || 0} / 清源 ${t.removed_from_qb || 0}；做种启动 ${r.started || 0}`
+  await ctx.task.log(line)
+
+  if (settings.notify_enabled !== false && ((t.added || 0) + (r.started || 0) > 0 || (t.failed || 0) > 0)) {
     try {
       await ctx.notify({
-        title: 'QB → TR 自动转移',
+        title: 'QB → TR 转移做种',
         body: line,
-        level: summary.failed ? 'warning' : 'success',
+        level: (t.failed || 0) ? 'warning' : 'success',
+        channels: ['telegram'],
         dedupe_key: 'qb2tr:auto:' + new Date().toISOString().slice(0, 13),
       })
-    } catch (error) {
-      await ctx.task.log('通知发送失败：' + ((error && error.message) || error))
-    }
+    } catch (e) { await ctx.task.log('通知失败：' + ((e && e.message) || e)) }
   }
-  await ctx.task.log(line)
-  return { added: summary.added, failed: summary.failed, skipped: summary.skipped }
+  return { added: t.added, failed: t.failed, started: r.started }
 }
 
-export async function recover() {
-  return { action: 'resume' }
-}
+export async function recover() { return { action: 'resume' } }
