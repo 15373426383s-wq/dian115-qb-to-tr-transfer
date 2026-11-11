@@ -75,9 +75,10 @@ export async function whichExist(ctx, settings, hashes) {
   return out
 }
 
-export async function add(ctx, settings, { metainfo, downloadDir, paused }) {
+export async function add(ctx, settings, { metainfo, downloadDir, paused, labels }) {
   const args = { metainfo, paused: Boolean(paused) }
   if (downloadDir) args['download-dir'] = downloadDir
+  if (labels && labels.length) args.labels = labels
   const res = await call(ctx, settings, 'torrent-add', args)
   if (res['torrent-duplicate']) return { duplicate: true, hash: String(res['torrent-duplicate'].hashString || '').toLowerCase() }
   const added = res['torrent-added'] || {}
