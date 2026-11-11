@@ -1,13 +1,12 @@
-// 转移做种 —— 参考 MoviePilot torrenttransfer 的简洁模型
+// 转移做种 —— 与 MoviePilot torrenttransfer 一致
 //
-//   qB 已完成 → 导出 .torrent → TR add(暂停, download_dir) → 立即删 qB 任务(不删文件)
-//   TR 自己校验；独立的 recheck 任务把「校验完成且暂停」的启动做种。
+//   qB get_completed_torrents(progress>=1 && amount_left<=0) → 读 .torrent →
+//   TR add_torrent(paused=True, download_dir) → 删源任务(不删文件)
+//   check_recheck 定时把 percentDone==1 且停止的任务 start。
 //
-// 不再做「不到 100% 就回滚」：部分下载的种子 qB 里跳过了文件，TR 里用
-// files-unwanted 同步同样的跳过列表即可按已下载内容做种，不需要、也不应该
-// 强行要求全量 100%。
+// 不判断"部分下载/跳过文件"，不设 files-unwanted，不强制校验，不回滚。
 import { parseSources, parsePathMap, mapPath } from './lib/sources.js'
-import { login, torrentList, exportTorrent, removeTorrent, torrentFiles } from './lib/qb.js'
+import { login, torrentList, exportTorrent, removeTorrent } from './lib/qb.js'
 import { whichExist, add, call } from './lib/tr.js'
 
 const LEDGER_KEY = 'ledger'
@@ -28,28 +27,28 @@ async function backupTorrent(ctx, hash, b64) {
   await ctx.storage.set('backup_index', index)
 }
 
-// MoviePilot 的 __download：源 qB 若有跳过文件，目标 TR 用 files-unwanted 对齐
-async function syncSkippedFiles(ctx, settings, hash, unwantedIdx) {
-  if (!unwantedIdx || !unwantedIdx.length) return
-  await call(ctx, settings, 'torrent-set', { ids: [hash], 'files-unwanted': unwantedIdx })
-}
-
 // 定时把 TR 里「校验完成(percentDone==1) 且暂停(停止)」的任务开始做种
+// 本插件转移任务的标签（与 MoviePilot 的「转移做种」标签同用途）
+export const TRANSFER_LABEL = 'QB转TR'
+
+// 定时把本插件转移的、校验完成(percentDone==1)且停止的任务开始做种。
+// 只处理带 TRANSFER_LABEL 的任务，绝不碰 TR 里 MP 的历史任务。
 export async function recheck(ctx) {
   const settings = await ctx.settings.get()
   const res = await call(ctx, settings, 'torrent-get', {
-    fields: ['hashString', 'name', 'status', 'percentDone', 'error'],
+    fields: ['hashString', 'name', 'status', 'percentDone', 'error', 'labels'],
   })
   const all = res.torrents || []
-  const ready = all.filter(t => Number(t.percentDone) >= 1 && Number(t.status) === 0)
+  const mine = all.filter(t => (t.labels || []).some(l => l === TRANSFER_LABEL))
+  const ready = mine.filter(t => Number(t.percentDone) >= 1 && Number(t.status) === 0 && Number(t.error) === 0)
   if (!ready.length) {
-    await ctx.task.log(`TR 检查：${all.length} 个任务，无新可做种`)
-    return { checked: all.length, started: 0 }
+    await ctx.task.log(`TR 检查：本插件任务 ${mine.length} 个，无新可做种`)
+    return { checked: mine.length, started: 0 }
   }
   const ids = ready.map(t => t.hashString)
   await call(ctx, settings, 'torrent-start', { ids })
-  await ctx.task.log(`TR 校验完成，开始做种 ${ids.length} 个`)
-  return { checked: all.length, started: ids.length }
+  await ctx.task.log(`本插件 ${ids.length} 个校验完成，开始做种`)
+  return { checked: mine.length, started: ids.length }
 }
 
 // 清 0：把「TR 里已有」的 qB 任务删掉（不删数据）。MoviePilot 里 deletesource 是加完就删，
@@ -98,27 +97,22 @@ export async function run(ctx, input = {}) {
   const cap = Math.max(1, Number(settings.max_per_run) || 20)
 
   await ctx.task.update({ stage: 'scan', message: '读取各 qB 已完成种子' })
-  // 与 MoviePilot torrenttransfer 一致：只转「完整下载」的种子。
-  // qB 里 progress=1 但文件列表存在 priority=0（选下部分集 / 跳过文件）的种子，
-  // 在 TR 里必然校验不到 100%（跨文件 piece 缺数据），MP 也不会转这类种子。直接跳过、保留在 qB。
+  // 与 MoviePilot qbittorrent.get_completed_torrents 一致：
+  //   progress>=1 且 amount_left<=0 且 state 不在「校验中/下载中/移动/错误」等状态。
+  // 不判断"部分下载/跳过文件"——热更剧集一集集下是正常形态，MP 照转。
+  const BUSY = new Set(['allocating','checkingdl','checkingup','downloading','error','forceddl','missingfiles','metadl','moving','queueddl','stalleddl','unknown'])
   const candidates = []
   const seen = new Set()
-  let partialSkipped = 0
   for (const source of sources) {
     try {
       await login(ctx, source, settings)
       const list = await torrentList(ctx, source, settings, { filter: 'all' })
       for (const t of list) {
         if (t.progress < 1) continue
+        if (t.amount_left > 0) continue
+        if (BUSY.has(String(t.state || '').toLowerCase())) continue
         if (wanted && !wanted.has(t.hash)) continue
         if (seen.has(t.hash)) continue
-        // 部分下载检测：有被跳过的文件就不转
-        let partial = false
-        try {
-          const files = await torrentFiles(ctx, source, settings, t.hash)
-          if (files.some(f => Number(f.priority) === 0)) partial = true
-        } catch { /* 读不到就按完整处理，交给 TR 校验 */ }
-        if (partial) { partialSkipped++; continue }
         seen.add(t.hash)
         candidates.push({ source, t })
       }
@@ -126,7 +120,6 @@ export async function run(ctx, input = {}) {
       await ctx.task.log(`${source.name} 读取失败：${(error && error.message) || error}`)
     }
   }
-  if (partialSkipped) await ctx.task.log(`跳过 ${partialSkipped} 个「部分下载」种子（与 MoviePilot 一致，保留在 qB）`)
 
   // 已在 TR 的跳过（由 cleanup 负责清源），避免重复添加
   let targets = candidates
@@ -157,24 +150,15 @@ export async function run(ctx, input = {}) {
       const metainfo = await exportTorrent(ctx, source, settings, t.hash)
       if (backup) await backupTorrent(ctx, t.hash, metainfo)
 
-      // qB 里被标记「不下载」的文件索引，TR 用 files-unwanted 对齐（部分下载种子也能做种）
-      let unwanted = []
-      try {
-        const files = await torrentFiles(ctx, source, settings, t.hash)
-        unwanted = files.map((f, i) => Number(f.priority) === 0 ? i : -1).filter(i => i >= 0)
-      } catch (e) { /* 读不到就按全量处理 */ }
-
+      // 与 MoviePilot torrenttransfer.__download 一致：仅 add(暂停, download_dir)，
+      // 不设置 files-unwanted、不强制校验、不回滚。TR 自己校验，check_recheck 负责 start。
       await ctx.task.checkpoint({ stage: 'adding', hash: t.hash, name: t.name, source: source.name, target_dir: targetDir })
-      const added = await add(ctx, settings, { metainfo, downloadDir: targetDir, paused: true })
+      const added = await add(ctx, settings, { metainfo, downloadDir: targetDir, paused: true, labels: [TRANSFER_LABEL] })
       if (added.duplicate) {
         item.action = 'skip'; item.note = 'TR 报告种子已存在'
         summary.skipped++; summary.items.push(item); continue
       }
-      const hash = added.hash || t.hash
-      if (unwanted.length) {
-        await syncSkippedFiles(ctx, settings, hash, unwanted)
-        item.note = `同步跳过 ${unwanted.length} 个文件`
-      }
+      item.note = '已加入 TR（暂停，待校验）'
 
       // MoviePilot 模型：加进去(暂停)即算成功，TR 自己会校验；recheck 任务负责后续 start
       item.action = 'added'
