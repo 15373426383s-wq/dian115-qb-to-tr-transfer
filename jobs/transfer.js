@@ -41,14 +41,16 @@ export async function recheck(ctx) {
   const all = res.torrents || []
   const mine = all.filter(t => (t.labels || []).some(l => l === TRANSFER_LABEL))
   const ready = mine.filter(t => Number(t.percentDone) >= 1 && Number(t.status) === 0 && Number(t.error) === 0)
-  if (!ready.length) {
-    await ctx.task.log(`TR 检查：本插件任务 ${mine.length} 个，无新可做种`)
-    return { checked: mine.length, started: 0 }
+  if (ready.length) {
+    const ids = ready.map(t => t.hashString)
+    await call(ctx, settings, 'torrent-start', { ids })
+    await ctx.task.log(`本插件 ${ids.length} 个校验完成，开始做种`)
+  } else if (mine.length) {
+    await ctx.task.log(`TR 检查：本插件任务 ${mine.length} 个，校验中…`)
   }
-  const ids = ready.map(t => t.hashString)
-  await call(ctx, settings, 'torrent-start', { ids })
-  await ctx.task.log(`本插件 ${ids.length} 个校验完成，开始做种`)
-  return { checked: mine.length, started: ids.length }
+  // remaining：本插件已加进 TR、但还没做种的任务数（仍在校验/未到100%/报错）
+  const remaining = mine.filter(t => !(Number(t.percentDone) >= 1 && Number(t.status) === 0 && Number(t.error) === 0)).length
+  return { checked: mine.length, started: ready.length, remaining }
 }
 
 // 清 0：把「TR 里已有」的 qB 任务删掉（不删数据）。MoviePilot 里 deletesource 是加完就删，
@@ -185,8 +187,26 @@ export async function run(ctx, input = {}) {
     await ctx.sleep(300)
   }
 
+  // 与 MoviePilot torrenttransfer 对齐：转移流程末尾自带 check_recheck，
+  // 轮询等待 TR 校验完成并立即启动做种——小种子几秒、大种子也就等校验那一下，
+  // 不论大小都很快做种，不丢给 5 分钟 auto 兜底。
+  if (summary.added > 0) {
+    let started = 0
+    try {
+      // 最多轮询约 3 分钟（20 次 × 10 秒）：TR verify 一般远快于此
+      for (let i = 0; i < 20; i++) {
+        const rr = await recheck(ctx)
+        started += rr.started || 0
+        if (!rr.remaining) break
+        await ctx.sleep(10000)
+      }
+      summary.started = started
+      if (started > 0) await ctx.task.log(`本轮已启动做种 ${started} 个${summary.added > started ? `（不足部分可能仍在校验，auto 会继续兜底）` : ''}`)
+    } catch (e) { await ctx.task.log('recheck 失败（auto 会兜底）：' + ((e && e.message) || e)) }
+  }
+
   await ctx.storage.set('last_transfer', summary)
-  await ctx.task.update({ stage: 'done', message: `加入 ${summary.added}，跳过 ${summary.skipped}，失败 ${summary.failed}，清源 ${summary.removed_from_qb}`, done: summary.added })
+  await ctx.task.update({ stage: 'done', message: `加入 ${summary.added}，跳过 ${summary.skipped}，失败 ${summary.failed}，清源 ${summary.removed_from_qb}${summary.started ? `，做种 ${summary.started}` : ''}`, done: summary.added })
   return summary
 }
 
