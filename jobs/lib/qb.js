@@ -73,6 +73,7 @@ export async function torrentList(ctx, source, settings, { filter = 'completed' 
     name: String(t.name || ''),
     size: Number(t.size) || 0,
     progress: Number(t.progress) || 0,
+    amount_left: Number(t.amount_left) || 0,
     state: String(t.state || ''),
     save_path: String(t.save_path || ''),
     category: String(t.category || ''),
