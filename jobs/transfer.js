@@ -1,8 +1,8 @@
-// 转移做种 —— 与 MoviePilot torrenttransfer 一致
+// 转移做种
 //
-//   qB get_completed_torrents(progress>=1 && amount_left<=0) → 读 .torrent →
-//   TR add_torrent(paused=True, download_dir) → 删源任务(不删文件)
-//   check_recheck 定时把 percentDone==1 且停止的任务 start。
+//   qB 取已完成种子(progress>=1 && amount_left<=0) → 读 .torrent →
+//   TR 加种子(paused=True, download_dir) → 删源任务(不删文件)
+//   校验完成后把 percentDone==1 且停止的任务 start。
 //
 // 不判断"部分下载/跳过文件"，不设 files-unwanted，不强制校验，不回滚。
 import { parseSources, parsePathMap, mapPath } from './lib/sources.js'
@@ -27,12 +27,11 @@ async function backupTorrent(ctx, hash, b64) {
   await ctx.storage.set('backup_index', index)
 }
 
-// 定时把 TR 里「校验完成(percentDone==1) 且暂停(停止)」的任务开始做种
-// 本插件转移任务的标签（与 MoviePilot 的「转移做种」标签同用途）
+// 本插件转移任务的标签
 export const TRANSFER_LABEL = 'QB转TR'
 
 // 定时把本插件转移的、校验完成(percentDone==1)且停止的任务开始做种。
-// 只处理带 TRANSFER_LABEL 的任务，绝不碰 TR 里 MP 的历史任务。
+// 只处理带 TRANSFER_LABEL 的任务。
 export async function recheck(ctx) {
   const settings = await ctx.settings.get()
   const res = await call(ctx, settings, 'torrent-get', {
@@ -53,8 +52,8 @@ export async function recheck(ctx) {
   return { checked: mine.length, started: ready.length, remaining }
 }
 
-// 清 0：把「TR 里已有」的 qB 任务删掉（不删数据）。MoviePilot 里 deletesource 是加完就删，
-// 这里作为补偿——之前失败残留的、或者 TR 已存在同 hash 的都清掉。
+// 清 0：把「TR 里已有」的 qB 任务删掉（不删数据），作为补偿——
+// 之前失败残留的、或者 TR 已存在同 hash 的都清掉。
 export async function cleanupQb(ctx) {
   const settings = await ctx.settings.get()
   const sources = parseSources(settings)
@@ -99,9 +98,8 @@ export async function run(ctx, input = {}) {
   const cap = Math.max(1, Number(settings.max_per_run) || 20)
 
   await ctx.task.update({ stage: 'scan', message: '读取各 qB 已完成种子' })
-  // 与 MoviePilot qbittorrent.get_completed_torrents 一致：
-  //   progress>=1 且 amount_left<=0 且 state 不在「校验中/下载中/移动/错误」等状态。
-  // 不判断"部分下载/跳过文件"——热更剧集一集集下是正常形态，MP 照转。
+  //   进度 100% 且剩余量为 0，且 state 不在「校验中/下载中/移动/错误」等状态。
+  //   不判断"部分下载/跳过文件"——热更剧集一集集下是正常形态。
   const BUSY = new Set(['allocating','checkingdl','checkingup','downloading','error','forceddl','missingfiles','metadl','moving','queueddl','stalleddl','unknown'])
   const candidates = []
   const seen = new Set()
@@ -152,8 +150,7 @@ export async function run(ctx, input = {}) {
       const metainfo = await exportTorrent(ctx, source, settings, t.hash)
       if (backup) await backupTorrent(ctx, t.hash, metainfo)
 
-      // 与 MoviePilot torrenttransfer 对齐：add(暂停, download_dir) 后，
-      // 主动 torrent-verify（对应 MP「添加校验检查任务」），再由 check_recheck 启动做种。
+      // 加(暂停, download_dir) 后，主动 torrent-verify，再由校验轮询启动做种。
       await ctx.task.checkpoint({ stage: 'adding', hash: t.hash, name: t.name, source: source.name, target_dir: targetDir })
       const added = await add(ctx, settings, { metainfo, downloadDir: targetDir, paused: true, labels: [TRANSFER_LABEL] })
       if (added.duplicate) {
@@ -164,7 +161,7 @@ export async function run(ctx, input = {}) {
       try { await verify(ctx, settings, hash) } catch (e) { await ctx.task.log(`校验触发失败（将靠 recheck 兜底）：${e.message || e}`) }
       item.note = '已加入 TR 并触发校验'
 
-      // MoviePilot 模型：加进去(暂停)即算成功，TR 自己会校验；recheck 任务负责后续 start
+      // 加进去(暂停)即算成功，TR 自己会校验；末尾轮询负责后续 start
       item.action = 'added'
       summary.added++
       ledger[t.hash] = { at: new Date().toISOString(), stage: 'added', name: t.name, source: source.name }
@@ -187,9 +184,8 @@ export async function run(ctx, input = {}) {
     await ctx.sleep(300)
   }
 
-  // 与 MoviePilot torrenttransfer 对齐：转移流程末尾自带 check_recheck，
-  // 轮询等待 TR 校验完成并立即启动做种——小种子几秒、大种子也就等校验那一下，
-  // 不论大小都很快做种，不丢给 5 分钟 auto 兜底。
+  // 转移流程末尾自带校验轮询：等待 TR 校验完成并立即启动做种——
+  // 小种子几秒、大种子也就等校验那一下，不论大小都很快做种。
   if (summary.added > 0) {
     let started = 0
     try {
