@@ -9,14 +9,14 @@
     {
       "id": "qb-to-tr-transfer",
       "name": "QB转TR转移做种",
-      "version": "0.9.0",
-      "description": "把多个 qBittorrent 已完成的种子迁移到 Transmission 继续做种（确认做种后才清源、绝不删数据），并支持自动辅种：扫描 TR 做种、经宿主 PT 搜索匹配同款（主标题+发布组+体积三重匹配，确保文件名一致）、校验通过直接做种、不下载数据。",
+      "version": "1.0.5",
+      "description": "多 qB 迁移 TR 做种，严格对齐 MoviePilot torrenttransfer：get_completed_torrents 判定、add_torrent(paused,download_dir)、加完主动 torrent-verify、删源不删文件、check_recheck 按标签启动做种。",
       "author": "哆啦A豆",
-      "source_url": "https://github.com/15373426383s-wq/dian115-qb-to-tr-transfer/releases/download/v0.9.0/qb-to-tr-transfer-0.9.0.dian115p",
-      "sha256": "1e9505c7c91002a5cf4e45d47db44cb7cc73e7e8a2ba66e37de48fe6ca4a883d",
+      "source_url": "https://github.com/15373426383s-wq/dian115-qb-to-tr-transfer/releases/download/v1.0.5/qb-to-tr-transfer-1.0.5.dian115p",
+      "sha256": "b95e05a363702be05ae0a7637f253a7c3ef2267f63d6597ae7cb857d711ac239",
       "delivery": "protected-v4",
       "homepage": "https://github.com/15373426383s-wq/dian115-qb-to-tr-transfer",
-      "changelog": "首个正式版：多 qB 迁移到 TR 做种（清源不删数据）+ 自动辅种（标题/发布组/体积三重匹配，零下载）。",
+      "changelog": "1.0.5：修复 verify 未 import 的缺陷；加完 TR 立即 torrent-verify，recheck 按标签启动做种。",
       "permissions": []
     }
   ]
