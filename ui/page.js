@@ -144,11 +144,10 @@ export async function mount(root, ctx) {
   const btnScan = doc.createElement('button'); btnScan.className = 'primary'; btnScan.textContent = '扫描 qB 已完成种子'
   const btnAll = doc.createElement('button'); btnAll.textContent = '一键转移待处理'
   const btnPick = doc.createElement('button'); btnPick.textContent = '转移选中'; btnPick.disabled = true
-  const btnCross = doc.createElement('button'); btnCross.textContent = 'TR 辅种'
-  const btnAutoSeed = doc.createElement('button'); btnAutoSeed.textContent = '自动辅种'
+  const btnStart = doc.createElement('button'); btnStart.textContent = '开始做种（TR 校验完成的）'
   const spacer = doc.createElement('span'); spacer.className = 'spacer'
   const btnReload = doc.createElement('button'); btnReload.className = 'ghost'; btnReload.textContent = '刷新'
-  bar.append(btnScan, btnAll, btnPick, btnCross, btnAutoSeed, spacer, btnReload)
+  bar.append(btnScan, btnAll, btnPick, btnStart, spacer, btnReload)
   wrap.append(bar)
 
   // ---- 流水线 ----
@@ -427,65 +426,25 @@ export async function mount(root, ctx) {
   btnPick.addEventListener('click', () => transfer({ hashes: Array.from(picked) }, '正在转移选中'))
   btnReload.addEventListener('click', async () => { await load(); log.textContent = '已刷新。' })
 
-  btnCross.addEventListener('click', async () => {
-    btnCross.disabled = true
+  btnStart.addEventListener('click', async () => {
+    btnStart.disabled = true
     log.textContent = ''
     const sp = doc.createElement('span'); sp.className = 'spin'
-    log.append(sp, doc.createTextNode('正在扫描辅种目录并加入 TR…'))
-    const since = Date.now()
+    log.append(sp, doc.createTextNode('正在把 TR 里校验完成的种子开始做种…'))
     try {
-      await ctx.tasks.run('crossseed', 'cross_' + since, {})
-      const timer = setInterval(async () => {
-        try {
-          const v = await ctx.storage.get('last_crossseed')
-          if (v && v.at && Date.parse(v.at) >= since - 2000) {
-            clearInterval(timer)
-            const lines = [`辅种完成：加入 ${v.added || 0} · 跳过 ${v.skipped || 0} · 失败 ${v.failed || 0} · 回滚 ${v.rolled_back || 0}${v.dry_run ? '（试运行）' : ''}`]
-            for (const x of (v.items || [])) lines.push(`${x.action === 'added' ? '✔' : x.action === 'fail' ? '✘' : x.action === 'plan' ? '›' : '·'} ${x.name}${x.note ? ' — ' + x.note : ''}`)
-            log.textContent = lines.join('\n')
-          }
-        } catch { clearInterval(timer); log.textContent = '辅种任务状态读取失败' }
-      }, 1000)
+      const res = await ctx.tasks.run('transfer', 'start_' + Date.now(), { recheck: true })
+      log.textContent = `已提交：${JSON.stringify(res)}`
     } catch (e) {
-      log.textContent = '辅种启动失败：' + ((e && e.message) || e)
+      log.textContent = '启动失败：' + ((e && e.message) || e)
     } finally {
-      btnCross.disabled = false
+      btnStart.disabled = false
     }
   })
+
   box.addEventListener('change', () => {
     picked.clear()
     if (box.checked) for (const it of items) if (!it.in_tr) picked.add(it.hash)
     render()
-  })
-
-  btnAutoSeed.addEventListener('click', async () => {
-    btnAutoSeed.disabled = true
-    log.textContent = ''
-    const sp = doc.createElement('span'); sp.className = 'spin'
-    log.append(sp, doc.createTextNode('正在从 TR 提取做种并搜索 PT 站…'))
-    const since = Date.now()
-    const timer = setInterval(async () => {
-      try {
-        const v = await ctx.storage.get('last_autoseed')
-        if (v && v.at && Date.parse(v.at) >= since - 2000) {
-          clearInterval(timer)
-          const lines = [`自动辅种：扫描 ${v.scanned || 0} · 匹配 ${v.matched || 0} · 推送 ${v.submitted || 0} · 跳过 ${v.skipped || 0} · 失败 ${v.failed || 0}${v.dry_run ? '（试运行）' : ''}${v.stopped ? ' · ' + v.stopped : ''}`]
-          for (const x of (v.items || []).slice(0, 80)) {
-            if (x.note) lines.push(`${x.note.includes('试运行') || x.note.includes('可辅') ? '›' : x.note.includes('失败') ? '✘' : '·'} ${x.name} — ${x.note}`)
-          }
-          log.textContent = lines.join('\n')
-        }
-      } catch { clearInterval(timer); log.textContent = '自动辅种状态读取失败' }
-    }, 1200)
-    try {
-      await ctx.tasks.run('autoseed', 'auto_' + since, {})
-    } catch (e) {
-      clearInterval(timer)
-      log.textContent = '自动辅种启动失败：' + ((e && e.message) || e)
-      btnAutoSeed.disabled = false
-    }
-    // 任务结束后恢复按钮（最长 30 分钟）
-    setTimeout(() => { btnAutoSeed.disabled = false }, 30 * 60 * 1000)
   })
 
   await load()
